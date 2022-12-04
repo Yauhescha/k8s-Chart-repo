@@ -1,0 +1,292 @@
+##################################
+#     User microservice part     #
+##################################
+
+#Database for user service
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: user-db-app
+  namespace: {{ .Values.namespace }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: user-db-app
+  template:
+    metadata:
+      labels:
+        app: user-db-app
+    spec:
+      containers:
+        - name: postgres-for-users
+          image: postgres:13.3
+          imagePullPolicy: "IfNotPresent"
+          ports:
+            - containerPort: 5432
+          envFrom:
+            - secretRef:
+                name: postgres-user-secrets
+          readinessProbe:
+            exec:
+              command: [ "pg_isready", "-U", "$(POSTGRES_USER)", "-d", "$(POSTGRES_DB)" ]
+            initialDelaySeconds: 15
+            timeoutSeconds: 2
+          livenessProbe:
+            exec:
+              command: [ "pg_isready", "-U", "$(POSTGRES_USER)", "-d", "$(POSTGRES_DB)" ]
+            initialDelaySeconds: 20
+            timeoutSeconds: 2
+          volumeMounts:
+            - mountPath: /var/lib/postgresql/data
+              name: postgres-pv-claim-user
+      volumes:
+        - name: postgres-pv-claim-user
+          persistentVolumeClaim:
+            claimName: postgres-pv-claim-user
+
+---
+#Service for user database
+apiVersion: v1
+kind: Service
+metadata:
+  name: user-db-service
+  namespace: {{ .Values.namespace }}
+  labels:
+    app: user-db-service
+spec:
+  type: NodePort
+  ports:
+    - port: 8083
+      targetPort: 5432
+  selector:
+    app: user-db-app
+
+---
+#Config for user service
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-config-user-service
+  namespace: {{ .Values.namespace }}
+  labels:
+    app: postgres-config-user-service
+    {{- template "ymaslau-program.labels" }}
+data:
+  SPRING_DATASOURCE_URL: jdbc:postgresql://user-db-service:8083/dockerdb1
+  SERVICE_POST_DELETEBYAUTHOR: http://post-service-service:8082/posts/author/
+
+---
+#User service application
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: user-service-app
+  namespace: {{ .Values.namespace }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  strategy:
+    type: RollingUpdate
+  selector:
+    matchLabels:
+      app: user-service-app
+  template:
+    metadata:
+      labels:
+        app: user-service-app
+    spec:
+      containers:
+        - name: user-service-app
+          image: epamyauhenimaslau1/users:1.1.0
+          ports:
+            - containerPort: 8081
+          envFrom:
+            - configMapRef:
+                name: postgres-config-user-service
+          env:
+            - name: SPRING_DATASOURCE_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-user-secrets
+                  key: POSTGRES_USER
+            - name: SPRING_DATASOURCE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-user-secrets
+                  key: POSTGRES_PASSWORD
+          readinessProbe:
+            httpGet:
+              port: 8081
+              path: /actuator/health/readiness
+            initialDelaySeconds: 25
+            timeoutSeconds: 2
+          livenessProbe:
+            httpGet:
+              port: 8081
+              path: /actuator/health/liveness
+            initialDelaySeconds: 30
+            timeoutSeconds: 2
+
+---
+#Service for user application
+apiVersion: v1
+kind: Service
+metadata:
+  name: user-service-service
+  namespace: {{ .Values.namespace }}
+spec:
+  type: LoadBalancer
+  selector:
+    app: user-service-app
+  ports:
+    - protocol: "TCP"
+      port: 8081
+      targetPort: 8081
+
+
+
+---
+##################################
+#     Post microservice part     #
+##################################
+
+#Database for post service
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: post-db-app
+  namespace: {{ .Values.namespace }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: post-db-app
+  template:
+    metadata:
+      labels:
+        app: post-db-app
+    spec:
+      containers:
+        - name: postgres-for-posts
+          image: postgres:13.3
+          imagePullPolicy: "IfNotPresent"
+          ports:
+            - containerPort: 5432
+          envFrom:
+            - secretRef:
+                name: postgres-post-secrets
+          readinessProbe:
+            exec:
+              command: [ "pg_isready", "-U", "$(POSTGRES_USER)", "-d", "$(POSTGRES_DB)" ]
+            initialDelaySeconds: 15
+            timeoutSeconds: 2
+          livenessProbe:
+            exec:
+              command: [ "pg_isready", "-U", "$(POSTGRES_USER)", "-d", "$(POSTGRES_DB)" ]
+            initialDelaySeconds: 20
+            timeoutSeconds: 2
+          volumeMounts:
+            - mountPath: /var/lib/postgresql/data
+              name: postgres-pv-claim-post
+      volumes:
+        - name: postgres-pv-claim-post
+          persistentVolumeClaim:
+            claimName: postgres-pv-claim-post
+
+---
+#Service for post database
+apiVersion: v1
+kind: Service
+metadata:
+  name: post-db-service
+  namespace: {{ .Values.namespace }}
+  labels:
+    app: post-db-service
+spec:
+  type: NodePort
+  ports:
+    - port: 8084
+      targetPort: 5432
+  selector:
+    app: post-db-app
+
+---
+#Config for post service
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-config-post-service
+  namespace: {{ .Values.namespace }}
+  labels:
+    app: postgres-config-post-service
+    {{- template "ymaslau-program.labels" }}
+data:
+  SPRING_DATASOURCE_URL: jdbc:postgresql://post-db-service:8084/dockerdb2
+  SERVICE_USER_GET: http://user-service-service:8081/users/
+
+---
+#Post service application
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: post-service-app
+  namespace: {{ .Values.namespace }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  strategy:
+    type: RollingUpdate
+  selector:
+    matchLabels:
+      app: post-service-app
+  template:
+    metadata:
+      labels:
+        app: post-service-app
+    spec:
+      containers:
+        - name: post-service-app
+          image: epamyauhenimaslau1/posts:1.1.0
+          ports:
+            - containerPort: 8082
+          envFrom:
+            - configMapRef:
+                name: postgres-config-post-service
+          env:
+            - name: SPRING_DATASOURCE_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-post-secrets
+                  key: POSTGRES_USER
+            - name: SPRING_DATASOURCE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-post-secrets
+                  key: POSTGRES_PASSWORD
+          readinessProbe:
+            httpGet:
+              port: 8082
+              path: /actuator/health/readiness
+            initialDelaySeconds: 25
+            timeoutSeconds: 2
+          livenessProbe:
+            httpGet:
+              port: 8082
+              path: /actuator/health/liveness
+            initialDelaySeconds: 30
+            timeoutSeconds: 2
+
+---
+#Service for post application
+apiVersion: v1
+kind: Service
+metadata:
+  name: post-service-service
+  namespace: {{ .Values.namespace }}
+spec:
+  type: LoadBalancer
+  selector:
+    app: post-service-app
+  ports:
+    - protocol: "TCP"
+      port: 8082
+      targetPort: 8082

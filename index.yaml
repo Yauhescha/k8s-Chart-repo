@@ -1,0 +1,12 @@
+apiVersion: v1
+entries:
+  ymaslau-program:
+  - apiVersion: v2
+    appVersion: 1.0.0
+    created: "2022-12-04T20:30:16.4056634+03:00"
+    digest: 6835f63cfc0f7a8a140b74723e2abe4505ecdd75ca3070aec55ead8d3f1163fe
+    name: ymaslau-program
+    urls:
+    - ymaslau-program-1.0.0.tgz
+    version: 1.0.0
+generated: "2022-12-04T20:30:16.4041618+03:00"
